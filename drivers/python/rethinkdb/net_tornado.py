@@ -122,7 +122,7 @@ class ConnectionInstance(object):
                                message)
 
         # Start a parallel function to perform reads
-        self._io_loop.add_callback(lambda: self._reader())
+        self._io_loop.add_callback(self._reader)
         raise gen.Return(self._parent)
 
     def is_open(self):
