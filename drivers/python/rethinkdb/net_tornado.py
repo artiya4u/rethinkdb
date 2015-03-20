@@ -129,11 +129,10 @@ class ConnectionInstance(object):
         return not self._stream.closed()
 
     @gen.coroutine
-    def close(self, noreply_wait, token, exc_info=False):
+    def close(self, noreply_wait, token, exception=None):
         self._closing = True
-        if exc_info:
-            (_, ex, _) = sys.exc_info()
-            err_message = "Connection is closed (%s)." + str(ex)
+        if exception is not None:
+            err_message = "Connection is closed (%s)." + str(exception)
         else:
             err_message = "Connection is closed."
 
@@ -167,6 +166,12 @@ class ConnectionInstance(object):
         res = yield response_future
         raise gen.Return(res)
 
+    # The _reader coroutine runs in its own context at the top level of the
+    # Tornado.IOLoop it was created with.  It runs in parallel, reading responses
+    # off of the socket and forwarding them to the appropriate Future or Cursor.
+    # This is shut down as a consequence of closing the stream, or an error in the
+    # socket/protocol from the server.  Unexpected errors in this coroutine will
+    # close the ConnectionInstance and be passed to any open Futures or Cursors.
     @gen.coroutine
     def _reader(self):
         try:
@@ -199,9 +204,9 @@ class ConnectionInstance(object):
                     del self._user_queries[token]
                 elif not self._closing:
                     raise RqlDriverError("Unexpected response received.")
-        except:
+        except Exception as ex:
             if not self._closing:
-                self.close(False, None, exc_info=True)
+                self.close(False, None, ex)
 
 
 # Wrap functions from the base connection class that may throw - these will
