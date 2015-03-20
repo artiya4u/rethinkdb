@@ -119,10 +119,9 @@ class Response(object):
 # error - indicates the current state of the cursor:
 #     None - there is more data available from the server and no errors have
 #         occurred yet
-#     False - there is no more data available from the cursor and no errors
-#         have occurred yet
 #     Exception - an error has occurred in the cursor and should be raised
-#         to the user once all results in `items` have been returned
+#         to the user once all results in `items` have been returned.  This
+#         will be a StopIteration exception if the cursor completed successfully.
 #
 # A class that derives from this should implement the following function:
 #     def _get_next(self, timeout):
@@ -142,7 +141,7 @@ class Cursor(object):
 
     def close(self):
         if self.error is None:
-            self.error = False
+            self.error = StopIteration()
             if self.conn.is_open():
                 self.outstanding_requests += 1
                 self.conn._parent._stop(self)
@@ -164,7 +163,7 @@ class Cursor(object):
                 self.items.extend(res.data)
             elif res.type == pResponse.SUCCESS_SEQUENCE:
                 self.items.extend(res.data)
-                self.error = False
+                self.error = StopIteration()
             else:
                 self.error = res.make_error(self.query)
         self._maybe_fetch_batch()
@@ -199,8 +198,6 @@ class DefaultCursor(Cursor):
         deadline = None if timeout is None else time.time() + timeout
         self._maybe_fetch_batch()
         while len(self.items) == 0:
-            if self.error == False:
-                raise StopIteration()
             if self.error is not None:
                 raise self.error
             self.conn._read_response(self.query.token, deadline)

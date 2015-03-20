@@ -34,6 +34,11 @@ def with_absolute_timeout(deadline, generator, io_loop):
     raise gen.Return(res)
 
 
+# The Tornado implementation of the Cursor object:
+# The `new_response` Future notifies any waiting coroutines that the can attempt
+# to grab the next result.  In addition, the waiting coroutine will schedule a
+# timeout at the given deadline (if provided), at which point the future will be
+# errored.
 class TornadoCursor(Cursor):
     def __init__(self, *args, **kwargs):
         Cursor.__init__(self, *args, **kwargs)
@@ -46,27 +51,29 @@ class TornadoCursor(Cursor):
 
     def _get_next(self, timeout):
         result_future = Future()
-        deadline = None if timeout is None else self.conn._io_loop.time() + timeout
+        if timeout is not None:
+            self.conn._io_loop.add_timeout(self.conn._io_loop.time() + timeout,
+                TornadoCursor._timeout_future, result_future)
 
         self._maybe_fetch_batch()
-        self._try_next(result_future, deadline)
+        self._try_next(result_future)
         return result_future
 
-    def _try_next(self, result_future, deadline):
+    @staticmethod
+    def _timeout_future(result_future):
+        # Only try to fill the result if it hasn't been responded to already
+        if result_future.running():
+            result_future.set_exception(RqlTimeoutError())
+
+    def _try_next(self, result_future):
+        # Only try to fill the result if it hasn't been responded to already
         if result_future.running():
             if len(self.items) == 0:
-                if self.error == False:
-                    result_future.set_exception(StopIteration())
-                elif self.error is not None:
+                if self.error is not None:
                     result_future.set_exception(self.error)
-                elif deadline is not None and deadline < self.conn._io_loop.time():
-                    result_future.set_exception(RqlTimeoutError())
                 else:
                     self.conn._io_loop.add_future(self.new_response,
-                        lambda future: self._try_next(result_future, None))
-                    if deadline is not None:
-                        self.conn._io_loop.add_timeout(deadline,
-                            TornadoCursor._try_next, self, result_future, deadline)
+                        lambda future: self._try_next(result_future))
             else:
                 result_future.set_result(convert_pseudo(self.items.pop(0), self.query))
 

@@ -513,7 +513,6 @@ class TestGetIntersectingBatching(TestWithConnection):
                 self.assertEqual(reference.count(row), 1)
                 reference.remove(row)
             self.assertRaises(StopIteration, lambda: next(itr))
-            self.assertTrue(cursor.error == False)
 
         self.assertTrue(seen_lazy)
 
@@ -544,7 +543,6 @@ class TestBatching(TestWithConnection):
 
         self.assertEqual(next(itr)['id'], ids.pop())
         self.assertRaises(StopIteration, lambda: next(itr))
-        self.assertTrue(cursor.error == False)
         r.db('test').table_drop('t1').run(c)
 
 class TestGroupWithTimeKey(TestWithConnection):
