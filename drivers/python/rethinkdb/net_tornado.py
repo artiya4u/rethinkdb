@@ -23,12 +23,12 @@ pResponse = p.Response.ResponseType
 pQuery = p.Query.QueryType
 
 @gen.coroutine
-def with_absolute_timeout(deadline, generator, io_loop):
+def with_absolute_timeout(deadline, generator, **kwargs):
     if deadline is None:
         res = yield generator
     else:
         try:
-            res = yield gen.with_timeout(deadline, generator, io_loop=io_loop)
+            res = yield gen.with_timeout(deadline, generator, **kwargs)
         except gen.TimeoutError:
             raise RqlTimeoutError()
     raise gen.Return(res)
@@ -96,19 +96,23 @@ class ConnectionInstance(object):
     def connect(self, timeout):
         deadline = None if timeout is None else self._io_loop.time() + timeout
         try:
-            yield with_absolute_timeout(deadline,
-                                        self._stream.connect((self._parent.host,
-                                                              self._parent.port)),
-                                        self._io_loop)
+            yield with_absolute_timeout(
+                deadline,
+                self._stream.connect((self._parent.host,
+                                      self._parent.port)),
+                io_loop=self._io_loop,
+                quiet_exceptions=(iostream.StreamClosedError))
         except Exception as err:
             raise RqlDriverError('Could not connect to %s:%s. Error: %s' %
                     (self._parent.host, self._parent.port, str(err)))
 
         try:
             self._stream.write(self._parent.handshake)
-            response = yield with_absolute_timeout(deadline,
-                                                   self._stream.read_until(b'\0'),
-                                                   io_loop=self._io_loop)
+            response = yield with_absolute_timeout(
+                deadline,
+                self._stream.read_until(b'\0'),
+                io_loop=self._io_loop,
+                quiet_exceptions=(iostream.StreamClosedError))
         except Exception as err:
             raise RqlDriverError(
                 'Connection interrupted during handshake with %s:%s. Error: %s' %
